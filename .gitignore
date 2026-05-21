@@ -1,0 +1,16 @@
+# Build / IDE
+.gradle/
+build/
+.idea/
+*.iml
+out/
+bin/
+*.class
+
+# Claude Code per-project settings (local, machine-specific)
+.claude/
+
+# Per-session debug-bridge artifacts (regeneratable, contain local paths)
+session*.md
+javatest-*-session.md
+*.hprof

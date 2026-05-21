@@ -1,0 +1,13 @@
+{
+  "_comment": "Add this entry to your Claude CLI ~/.claude.json under mcpServers. Replace the jar path with your actual path.",
+  "mcpServers": {
+    "debug-bridge": {
+      "command": "java",
+      "args": [
+        "--add-modules", "jdk.jdi",
+        "-jar",
+        "C:/Users/ittai/cl-projects/debug-bridge/build/libs/debug-bridge-0.1.0.jar"
+      ]
+    }
+  }
+}

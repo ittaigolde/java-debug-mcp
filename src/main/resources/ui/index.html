@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>debug-bridge</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <span class="dot" id="status-dot"></span>
+    <span id="status-text">connecting…</span>
+    <span class="sep">·</span>
+    <span id="vm-info"></span>
+    <span class="sep">·</span>
+    <span id="event-count">0 events</span>
+  </header>
+  <div id="gate-banner" class="gate-idle">
+    <span id="gate-label">click <strong>Start</strong> to let claude proceed</span>
+    <button id="gate-button" type="button">Start</button>
+  </div>
+  <main>
+    <section id="threads-pane">
+      <h2>Threads</h2>
+      <ul id="threads-list"></ul>
+    </section>
+    <section id="focus-pane">
+      <div id="focus-header">
+        <h2 id="focus-title">— no focus —</h2>
+        <span id="focus-sub"></span>
+      </div>
+      <div id="frames-and-source">
+        <div id="frames-panel">
+          <h3>Frames</h3>
+          <ol id="frames-list"></ol>
+        </div>
+        <div id="source-panel">
+          <h3 id="source-title">Source</h3>
+          <pre id="source-view"></pre>
+        </div>
+        <div id="locals-panel">
+          <h3>Locals</h3>
+          <pre id="locals-view"></pre>
+        </div>
+      </div>
+    </section>
+    <section id="events-pane">
+      <h2>Breakpoints</h2>
+      <ul id="breakpoints-list"></ul>
+      <h2>Notes <span class="muted" id="notes-hint" style="font-weight:normal;text-transform:none;letter-spacing:0;">— claude's thoughts</span></h2>
+      <ul id="notes-list"></ul>
+      <h2>Events</h2>
+      <ul id="events-list"></ul>
+    </section>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>
