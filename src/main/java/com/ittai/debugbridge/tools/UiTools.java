@@ -18,14 +18,22 @@ public final class UiTools {
             new ToolSpec(
                 "ui_start",
                 "Start the embedded web UI (read-only observation surface). Returns a localhost URL "
-                    + "to open in a browser. Idempotent — if already running, returns the existing URL.",
+                    + "to open in a browser. Idempotent — if already running, returns the existing URL. "
+                    + "host defaults to 127.0.0.1. Remote hosts such as 0.0.0.0 require token='auto' "
+                    + "or an explicit token.",
                 object(
-                    props("port", integer("Port to bind (default 0 → free port chosen by OS)")),
+                    props(
+                        "host", str("Bind host (default 127.0.0.1; use 0.0.0.0 only on trusted networks)"),
+                        "port", integer("Port to bind (default 0 → free port chosen by OS)"),
+                        "token", str("Optional UI auth token. Use 'auto' to generate one. Required for remote host.")
+                    ),
                     reqs()
                 ),
                 args -> {
+                    String host = Args.stringOpt(args, "host", "127.0.0.1");
                     int port = Args.integerOpt(args, "port", 0);
-                    return ui.start(port);
+                    String token = Args.stringOpt(args, "token", null);
+                    return ui.start(host, port, token);
                 }
             ),
             new ToolSpec(

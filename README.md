@@ -68,6 +68,32 @@ Add to `~/.claude.json` under `mcpServers`. Use an **absolute path** to the
 To start the UI automatically at launch, add `-Ddebug-bridge.ui.port=auto`
 before `-jar`. Without it, Claude can still call `ui_start` at runtime.
 
+By default the UI binds to `127.0.0.1` only. This is intentional: the UI exposes
+debugger state such as threads, stack frames, locals, source paths, and notes.
+For remote access, opt in explicitly and require a token:
+
+```json
+{
+  "host": "0.0.0.0",
+  "port": 0,
+  "token": "auto"
+}
+```
+
+or at process startup:
+
+```
+-Ddebug-bridge.ui.host=0.0.0.0
+-Ddebug-bridge.ui.port=auto
+-Ddebug-bridge.ui.token=auto
+```
+
+Remote binds fail unless a token is provided through `ui_start`, through
+`-Ddebug-bridge.ui.token=...`, through `DEBUG_BRIDGE_UI_TOKEN`, or with
+`token=auto`. The returned UI URL includes `?token=...`; open that exact URL in
+the browser. There is no built-in TLS, so use this only on a trusted network,
+VPN, SSH tunnel, or behind a reverse proxy that provides HTTPS.
+
 ## Run the demo
 
 In one terminal, launch the demo target with JDWP enabled:

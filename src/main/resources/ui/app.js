@@ -13,6 +13,13 @@ const state = {
 };
 
 const $ = (id) => document.getElementById(id);
+const uiToken = new URLSearchParams(window.location.search).get('token') || '';
+
+function authUrl(path) {
+  if (!uiToken) return path;
+  const sep = path.includes('?') ? '&' : '?';
+  return `${path}${sep}token=${encodeURIComponent(uiToken)}`;
+}
 
 function setStatus(text, cls) {
   $('status-text').textContent = text;
@@ -49,7 +56,7 @@ function renderGate() {
 
 async function clickStart() {
   try {
-    await fetch('/api/ready', { method: 'POST' });
+    await fetch(authUrl('/api/ready'), { method: 'POST' });
     const banner = $('gate-banner');
     banner.classList.remove('gate-idle', 'gate-armed', 'gate-buffered');
     banner.classList.add('gate-acked');
@@ -173,7 +180,7 @@ async function focusThread(threadId) {
   $('focus-title').textContent = t ? t.name : threadId;
   $('focus-sub').textContent = t ? `${t.status}${t.suspended ? ' · paused' : ''}` : '';
   try {
-    const r = await fetch(`/api/frames?thread=${encodeURIComponent(threadId)}`);
+    const r = await fetch(authUrl(`/api/frames?thread=${encodeURIComponent(threadId)}`));
     const j = await r.json();
     state.focusedFrames = j;
     renderFrames(j);
@@ -235,7 +242,7 @@ async function loadSource(classFqn, sourceName, line) {
   const params = new URLSearchParams({ class: classFqn, line: String(line) });
   if (sourceName) params.set('source', sourceName);
   try {
-    const r = await fetch('/api/source?' + params.toString());
+    const r = await fetch(authUrl('/api/source?' + params.toString()));
     const j = await r.json();
     const view = $('source-view');
     if (!j.available) {
@@ -308,7 +315,7 @@ function applyEvent(ev) {
 
 async function refreshState() {
   try {
-    const r = await fetch('/api/state');
+    const r = await fetch(authUrl('/api/state'));
     const j = await r.json();
     const savedFocus = state.focusedThread;
     applySnapshot(j);
@@ -326,7 +333,7 @@ function applyNote(n) {
 }
 
 function connect() {
-  const es = new EventSource('/api/events');
+  const es = new EventSource(authUrl('/api/events'));
   es.addEventListener('snapshot', (e) => applySnapshot(JSON.parse(e.data)));
   es.addEventListener('debug_event', (e) => applyEvent(JSON.parse(e.data)));
   es.addEventListener('tool_call', (e) => refreshState());

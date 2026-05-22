@@ -26,7 +26,7 @@ public final class Invoker {
 
     private final Ids ids;
     private final Inspector inspector;
-    private final ExecutorService invokeExecutor = Executors.newCachedThreadPool(r -> {
+    private final ExecutorService invokeExecutor = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "debug-bridge-invoker");
         t.setDaemon(true);
         return t;
@@ -85,8 +85,9 @@ public final class Invoker {
         try {
             result = fut.get(timeoutMs, TimeUnit.MILLISECONDS);
         } catch (TimeoutException te) {
-            fut.cancel(true);
-            throw new TimeoutException("invoke timed out after " + timeoutMs + "ms: " + targetIdOrFqn + "." + methodName);
+            throw new TimeoutException("invoke timed out after " + timeoutMs + "ms: "
+                + targetIdOrFqn + "." + methodName
+                + " — JDI method invocation is not safely cancellable; the target invocation may still be running");
         } catch (ExecutionException ee) {
             Throwable cause = ee.getCause();
             if (cause instanceof InvocationException ie) {

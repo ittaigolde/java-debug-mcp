@@ -21,7 +21,8 @@ public final class InvokeTools {
                 "invoke_method",
                 "Call a method on an object (instance) or class (static) in the paused target. "
                     + "Side effects in the target are real. The target thread must be suspended at a breakpoint, "
-                    + "step, or exception event.",
+                    + "step, or exception event. If timeout_ms elapses, JDI may still be executing the target "
+                    + "method; method invocation is not safely cancellable.",
                 object(
                     props(
                         "target", str("object_id (instance invocation) OR class FQN (static invocation)"),

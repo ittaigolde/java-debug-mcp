@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Predicate;
 
 public final class EventBus {
 
@@ -29,11 +30,35 @@ public final class EventBus {
         while (!queue.offerLast(ev)) {
             queue.pollFirst();
         }
+        notifyAll();
         return ev;
     }
 
     public DebugEvent poll(long timeoutMs) throws InterruptedException {
         return queue.pollFirst(timeoutMs, TimeUnit.MILLISECONDS);
+    }
+
+    public synchronized long currentSeq() {
+        return seq;
+    }
+
+    public synchronized DebugEvent waitAfter(long afterSeq, long timeoutMs) throws InterruptedException {
+        return waitAfter(afterSeq, timeoutMs, ev -> true);
+    }
+
+    public synchronized DebugEvent waitAfter(long afterSeq, long timeoutMs, Predicate<DebugEvent> filter) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + Math.max(0, timeoutMs);
+        while (true) {
+            for (DebugEvent ev : queue) {
+                if (ev.seq() > afterSeq && filter.test(ev)) {
+                    queue.remove(ev);
+                    return ev;
+                }
+            }
+            long remaining = deadline - System.currentTimeMillis();
+            if (remaining <= 0) return null;
+            wait(remaining);
+        }
     }
 
     public List<DebugEvent> snapshot(int limit) {

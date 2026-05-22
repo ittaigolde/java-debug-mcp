@@ -29,6 +29,9 @@ import io.modelcontextprotocol.spec.McpSchema;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.io.FilterInputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.time.format.DateTimeFormatter;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -36,6 +39,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.CountDownLatch;
 
 public final class App {
@@ -63,11 +67,13 @@ public final class App {
 
         String uiPortProp = System.getProperty("debug-bridge.ui.port");
         if (uiPortProp != null && !uiPortProp.isBlank()) {
+            String host = System.getProperty("debug-bridge.ui.host", "127.0.0.1");
+            String token = System.getProperty("debug-bridge.ui.token");
             int port;
             if ("auto".equalsIgnoreCase(uiPortProp.trim())) port = 0;
             else port = Integer.parseInt(uiPortProp.trim());
             try {
-                ui.start(port);
+                ui.start(host, port, token);
             } catch (Exception e) {
                 System.err.println("[debug-bridge] UI startup failed: " + e);
             }
@@ -86,7 +92,13 @@ public final class App {
         tools.addAll(UiTools.all(ui, sources, gate));
         tools.addAll(NoteTools.all(notes, broadcaster, session));
 
-        StdioServerTransportProvider transport = new StdioServerTransportProvider(new JacksonMcpJsonMapper(JSON));
+        CountDownLatch shutdown = new CountDownLatch(1);
+        AtomicBoolean cleanupStarted = new AtomicBoolean(false);
+        StdioServerTransportProvider transport = new StdioServerTransportProvider(
+            new JacksonMcpJsonMapper(JSON),
+            new ShutdownOnEofInputStream(System.in, shutdown),
+            System.out
+        );
 
         var spec = McpServer.sync(transport)
             .serverInfo("debug-bridge", "0.1.0")
@@ -98,7 +110,7 @@ public final class App {
                     + "Default suspend_policy is 'event_thread' to avoid freezing live services; "
                     + "use 'all' only when needed. "
                     + "The Markdown dump captures the full session for documentation/research. "
-                    + "Optional read-only browser UI: ui_start(port?) returns a localhost URL."
+                    + "Optional read-only browser UI: ui_start(port?, host?, token?) returns a URL."
             );
 
         for (ToolSpec t : tools) {
@@ -107,18 +119,18 @@ public final class App {
 
         McpSyncServer server = spec.build();
 
-        CountDownLatch shutdown = new CountDownLatch(1);
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            try {
-                ui.stop();
-                bridge.detach();
-                session.close();
-                server.closeGracefully();
-            } catch (Exception ignored) {}
+        Runnable cleanup = () -> {
+            if (!cleanupStarted.compareAndSet(false, true)) return;
+            try { ui.stop(); } catch (Exception ignored) {}
+            try { bridge.detach(); } catch (Exception ignored) {}
+            try { session.close(); } catch (Exception ignored) {}
+            try { server.closeGracefully(); } catch (Exception ignored) {}
             shutdown.countDown();
-        }, "debug-bridge-shutdown"));
+        };
+        Runtime.getRuntime().addShutdownHook(new Thread(cleanup, "debug-bridge-shutdown"));
 
         shutdown.await();
+        cleanup.run();
     }
 
     private static McpServerFeatures.SyncToolSpecification buildSpec(ToolSpec t, Session session, UiBroadcaster broadcaster) {
@@ -191,5 +203,28 @@ public final class App {
         ev.put("duration_ms", durationMs);
         ev.put("ts_ms", System.currentTimeMillis());
         broadcaster.publish("tool_call", ev);
+    }
+
+    private static final class ShutdownOnEofInputStream extends FilterInputStream {
+        private final CountDownLatch shutdown;
+
+        ShutdownOnEofInputStream(InputStream in, CountDownLatch shutdown) {
+            super(in);
+            this.shutdown = shutdown;
+        }
+
+        @Override
+        public int read() throws IOException {
+            int n = super.read();
+            if (n < 0) shutdown.countDown();
+            return n;
+        }
+
+        @Override
+        public int read(byte[] b, int off, int len) throws IOException {
+            int n = super.read(b, off, len);
+            if (n < 0) shutdown.countDown();
+            return n;
+        }
     }
 }

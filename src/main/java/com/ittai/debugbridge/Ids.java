@@ -56,6 +56,16 @@ public final class Ids {
         idToRef.put(id, newRef);
     }
 
+    public synchronized void remove(String id) {
+        Object removed = idToRef.remove(id);
+        if (removed == null) return;
+        keyToId.entrySet().removeIf(e -> e.getValue().equals(id));
+    }
+
+    public synchronized Map<String, Object> snapshot() {
+        return new HashMap<>(idToRef);
+    }
+
     public synchronized void clear() {
         counters.clear();
         keyToId.clear();

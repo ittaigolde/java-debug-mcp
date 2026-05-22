@@ -49,4 +49,20 @@ class IdsTest {
         String b = ids.idFor("obj", "x", new Object());
         assertEquals("obj_1", b, "counter reset after clear");
     }
+
+    @Test
+    void removeDropsIdAndKeyMapping() {
+        Ids ids = new Ids();
+        Object first = new Object();
+        Object second = new Object();
+
+        String a = ids.idFor("obj", "x", first);
+        ids.remove(a);
+
+        assertFalse(ids.has(a));
+        assertThrows(IllegalArgumentException.class, () -> ids.resolveAny(a));
+        String b = ids.idFor("obj", "x", second);
+        assertNotEquals(a, b);
+        assertSame(second, ids.resolveAny(b));
+    }
 }

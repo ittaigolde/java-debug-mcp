@@ -246,6 +246,19 @@ public final class BreakpointTools {
             row.put("enabled", req.isEnabled());
             out.add(row);
         }
+        for (ClassPrepareRequest req : erm.classPrepareRequests()) {
+            Object pending = req.getProperty("debug_bridge_pending");
+            if (!(pending instanceof Map<?, ?> info)) continue;
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", info.get("id"));
+            row.put("kind", "line");
+            row.put("class", info.get("class"));
+            row.put("line", info.get("line"));
+            row.put("suspend_policy", info.get("policy"));
+            row.put("enabled", req.isEnabled());
+            row.put("status", "deferred");
+            out.add(row);
+        }
         return Map.of("breakpoints", out);
     }
 
@@ -256,6 +269,7 @@ public final class BreakpointTools {
         if (ref instanceof EventRequest req) {
             req.disable();
             erm.deleteEventRequest(req);
+            bridge.ids().remove(id);
             return Map.of("removed", id, "kind", req.getClass().getSimpleName());
         }
         if (ref instanceof List<?> list) {
@@ -265,6 +279,7 @@ public final class BreakpointTools {
                     erm.deleteEventRequest(req);
                 }
             }
+            bridge.ids().remove(id);
             return Map.of("removed", id, "kind", "watchpoint_pair");
         }
         throw new IllegalArgumentException("id " + id + " does not refer to a breakpoint");

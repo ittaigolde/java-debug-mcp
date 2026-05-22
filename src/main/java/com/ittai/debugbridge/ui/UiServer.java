@@ -11,6 +11,9 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -25,6 +28,8 @@ public final class UiServer {
     private final UserGate gate;
     private volatile HttpServer server;
     private volatile int boundPort;
+    private volatile String boundHost;
+    private volatile String token;
 
     public UiServer(StateView view, UiBroadcaster broadcaster, UserGate gate) {
         this.view = view;
@@ -33,10 +38,16 @@ public final class UiServer {
     }
 
     public synchronized Map<String, Object> start(int requestedPort) throws IOException {
+        return start("127.0.0.1", requestedPort, null);
+    }
+
+    public synchronized Map<String, Object> start(String requestedHost, int requestedPort, String requestedToken) throws IOException {
         if (server != null) {
-            return Map.of("url", url(), "port", boundPort, "already_running", true);
+            return info(true, false);
         }
-        HttpServer s = HttpServer.create(new InetSocketAddress("127.0.0.1", Math.max(0, requestedPort)), 0);
+        String host = normalizeHost(requestedHost);
+        String authToken = resolveToken(host, requestedToken);
+        HttpServer s = HttpServer.create(new InetSocketAddress(host, Math.max(0, requestedPort)), 0);
         s.setExecutor(Executors.newCachedThreadPool(r -> {
             Thread t = new Thread(r, "debug-bridge-ui");
             t.setDaemon(true);
@@ -52,8 +63,14 @@ public final class UiServer {
         s.start();
         this.server = s;
         this.boundPort = s.getAddress().getPort();
-        System.err.println("[debug-bridge] UI: " + url());
-        return Map.of("url", url(), "port", boundPort, "already_running", false);
+        this.boundHost = host;
+        this.token = authToken;
+        Map<String, Object> out = info(false, "auto".equals(requestedToken));
+        System.err.println("[debug-bridge] UI: " + out.get("url"));
+        if (authToken != null) {
+            System.err.println("[debug-bridge] UI token: " + authToken);
+        }
+        return out;
     }
 
     public synchronized Map<String, Object> stop() {
@@ -62,6 +79,8 @@ public final class UiServer {
         server.stop(0);
         server = null;
         boundPort = 0;
+        boundHost = null;
+        token = null;
         return Map.of("stopped", true);
     }
 
@@ -70,12 +89,15 @@ public final class UiServer {
     }
 
     public synchronized String url() {
-        return server == null ? null : "http://127.0.0.1:" + boundPort + "/";
+        if (server == null) return null;
+        String host = "0.0.0.0".equals(boundHost) ? "127.0.0.1" : boundHost;
+        return withToken("http://" + host + ":" + boundPort + "/");
     }
 
     // --- handlers --------------------------------------------------
 
     private void serveIndex(HttpExchange ex) throws IOException {
+        if (!authorized(ex)) return;
         if (!ex.getRequestURI().getPath().equals("/") && !ex.getRequestURI().getPath().equals("/index.html")) {
             send(ex, 404, "text/plain", "not found");
             return;
@@ -89,6 +111,7 @@ public final class UiServer {
     }
 
     private void serveStatic(HttpExchange ex) throws IOException {
+        if (!authorized(ex)) return;
         String path = ex.getRequestURI().getPath();
         String name = path.substring("/static/".length());
         if (name.contains("..") || name.contains("/") || name.isBlank()) {
@@ -105,6 +128,7 @@ public final class UiServer {
     }
 
     private void serveState(HttpExchange ex) throws IOException {
+        if (!authorized(ex)) return;
         try {
             sendJson(ex, 200, view.snapshot());
         } catch (Exception e) {
@@ -113,6 +137,7 @@ public final class UiServer {
     }
 
     private void serveFrames(HttpExchange ex) throws IOException {
+        if (!authorized(ex)) return;
         Map<String, String> q = query(ex.getRequestURI());
         String threadId = q.get("thread");
         if (threadId == null) { sendJson(ex, 400, errorMap("missing thread")); return; }
@@ -124,6 +149,7 @@ public final class UiServer {
     }
 
     private void serveSource(HttpExchange ex) throws IOException {
+        if (!authorized(ex)) return;
         Map<String, String> q = query(ex.getRequestURI());
         String classFqn = q.get("class");
         String sourceName = q.getOrDefault("source", deriveSourceName(classFqn));
@@ -140,6 +166,7 @@ public final class UiServer {
     }
 
     private void serveReady(HttpExchange ex) throws IOException {
+        if (!authorized(ex)) return;
         if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
             send(ex, 405, "text/plain", "POST only");
             return;
@@ -149,6 +176,7 @@ public final class UiServer {
     }
 
     private void serveEvents(HttpExchange ex) throws IOException {
+        if (!authorized(ex)) return;
         ex.getResponseHeaders().add("Content-Type", "text/event-stream; charset=utf-8");
         ex.getResponseHeaders().add("Cache-Control", "no-cache");
         ex.getResponseHeaders().add("Connection", "keep-alive");
@@ -197,6 +225,83 @@ public final class UiServer {
         try (InputStream is = UiServer.class.getResourceAsStream(name)) {
             return is == null ? null : is.readAllBytes();
         }
+    }
+
+    private Map<String, Object> info(boolean alreadyRunning, boolean generatedToken) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("url", url());
+        out.put("host", boundHost);
+        out.put("port", boundPort);
+        out.put("already_running", alreadyRunning);
+        out.put("auth", token == null ? "none" : "token");
+        if (token != null) {
+            out.put("token", token);
+            out.put("generated_token", generatedToken);
+        }
+        if (!isLoopbackHost(boundHost)) {
+            out.put("remote_url_hint", withToken("http://<server-host>:" + boundPort + "/"));
+            out.put("warning", "Remote UI is exposed; use only on a trusted network, VPN, SSH tunnel, or reverse proxy with TLS.");
+        }
+        return out;
+    }
+
+    private static String normalizeHost(String host) {
+        if (host == null || host.isBlank()) return "127.0.0.1";
+        return host.trim();
+    }
+
+    static String resolveTokenForTest(String host, String requestedToken) {
+        return resolveToken(host, requestedToken);
+    }
+
+    private static String resolveToken(String host, String requestedToken) {
+        String token = requestedToken;
+        if (token == null || token.isBlank()) token = System.getProperty("debug-bridge.ui.token");
+        if (token == null || token.isBlank()) token = System.getenv("DEBUG_BRIDGE_UI_TOKEN");
+        if ("auto".equals(token)) token = generateToken();
+        if (!isLoopbackHost(host) && (token == null || token.isBlank())) {
+            throw new IllegalArgumentException("ui token is required when binding remote host " + host
+                + "; pass token='auto', -Ddebug-bridge.ui.token=..., or DEBUG_BRIDGE_UI_TOKEN");
+        }
+        return token == null || token.isBlank() ? null : token;
+    }
+
+    private static boolean isLoopbackHost(String host) {
+        return host == null
+            || "127.0.0.1".equals(host)
+            || "localhost".equalsIgnoreCase(host)
+            || "::1".equals(host)
+            || "[::1]".equals(host);
+    }
+
+    private String withToken(String baseUrl) {
+        if (token == null) return baseUrl;
+        return baseUrl + "?token=" + java.net.URLEncoder.encode(token, StandardCharsets.UTF_8);
+    }
+
+    private boolean authorized(HttpExchange ex) throws IOException {
+        String expected = token;
+        if (expected == null) return true;
+        String got = null;
+        String auth = ex.getRequestHeaders().getFirst("Authorization");
+        if (auth != null && auth.regionMatches(true, 0, "Bearer ", 0, 7)) {
+            got = auth.substring(7).trim();
+        }
+        if (got == null) {
+            got = query(ex.getRequestURI()).get("token");
+        }
+        if (got != null && MessageDigest.isEqual(
+            got.getBytes(StandardCharsets.UTF_8), expected.getBytes(StandardCharsets.UTF_8))) {
+            return true;
+        }
+        send(ex, 401, "text/plain", "unauthorized");
+        return false;
+    }
+
+    private static String generateToken() {
+        byte[] bytes = new byte[24];
+        new SecureRandom().nextBytes(bytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 
     private static String deriveSourceName(String classFqn) {

@@ -117,19 +117,22 @@ public final class ExecutionTools {
     }
 
     private static Map<String, Object> resumeAndWait(Bridge bridge, String threadId, long timeoutMs) throws InterruptedException {
+        long afterSeq = bridge.events().currentSeq();
         if (threadId == null) {
             bridge.vm().resume();
         } else {
             ThreadReference t = bridge.ids().resolve(threadId, ThreadReference.class);
             t.resume();
         }
-        EventBus.DebugEvent ev = bridge.events().poll(timeoutMs);
+        EventBus.DebugEvent ev = bridge.events().waitAfter(afterSeq, timeoutMs);
         return wrapEvent(ev, timeoutMs);
     }
 
     private static Map<String, Object> stepAndWait(Bridge bridge, String threadId, int depth, long timeoutMs) throws InterruptedException {
+        long afterSeq = bridge.events().currentSeq();
         step(bridge, threadId, depth);
-        EventBus.DebugEvent ev = bridge.events().poll(timeoutMs);
+        EventBus.DebugEvent ev = bridge.events().waitAfter(afterSeq, timeoutMs,
+            e -> "step_completed".equals(e.kind()) && threadId.equals(e.threadId()));
         return wrapEvent(ev, timeoutMs);
     }
 
